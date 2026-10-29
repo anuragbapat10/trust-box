@@ -30,20 +30,20 @@ func NewInMemoryRepositoryWithCapacity(capacity int) (*InMemoryRepository, error
 	}, nil
 }
 
-func (r *InMemoryRepository) Create(ctx context.Context, inst Instance) (Instance, error) {
+func (r *InMemoryRepository) Create(ctx context.Context, inst Instance) error {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
 
 	if inst.State == StateDeleted || inst.State == StateInactive {
-		return Instance{}, ErrInvalidState
+		return ErrInvalidState
 	}
 
 	if len(r.instances) >= r.capacity {
-		return Instance{}, ErrAtCapacity
+		return ErrAtCapacity
 	}
 
 	r.instances[inst.ID] = inst
-	return inst, nil
+	return nil
 }
 
 func (r *InMemoryRepository) Get(ctx context.Context, id string) (Instance, error) {

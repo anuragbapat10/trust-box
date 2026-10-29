@@ -15,12 +15,9 @@ func TestInMemoryRepository_Create(t *testing.T) {
 
 	inst := Instance{ID: uuid.NewString(), State: StateActive}
 
-	got, err := repo.Create(context.Background(), inst)
+	err := repo.Create(context.Background(), inst)
 	if err != nil {
 		t.Fatalf("Create: unexpected error: %v", err)
-	}
-	if got != inst {
-		t.Errorf("Create: returned instance mismatch\ngot:  %+v\nwant: %+v", got, inst)
 	}
 	if len(repo.instances) != 1 {
 		t.Errorf("Create: want 1 stored instance, got %d", len(repo.instances))
@@ -41,18 +38,15 @@ func TestInMemoryRepository_Create_AtCapacity(t *testing.T) {
 	ct := 0
 	for ct = 0; ct < maxCap; ct++ {
 		inst := Instance{ID: uuid.NewString(), State: StateActive}
-		if _, err := repo.Create(context.Background(), inst); err != nil {
+		if err := repo.Create(context.Background(), inst); err != nil {
 			t.Fatalf("Create number %d: %v", ct, err)
 		}
 	}
 
 	instAtCap := Instance{ID: uuid.NewString(), State: StateActive}
-	got, err := repo.Create(context.Background(), instAtCap)
+	err = repo.Create(context.Background(), instAtCap)
 	if err != ErrAtCapacity {
 		t.Fatalf("Create #%d: want ErrAtCapacity, got %v", ct+1, err)
-	}
-	if got != (Instance{}) {
-		t.Errorf("Create #%d: want zero value, got %+v", ct+1, got)
 	}
 	if len(repo.instances) != ct {
 		t.Errorf("Create #%d: want %d stored instance, got %d", ct+1, ct, len(repo.instances))
@@ -65,12 +59,9 @@ func TestInMemoryRepository_Create_AtCapacity(t *testing.T) {
 func TestInMemoryRepository_Create_DeletedState(t *testing.T) {
 	repo := NewInMemoryRepository()
 	inst := Instance{ID: "deleted-id", State: StateDeleted}
-	got, err := repo.Create(context.Background(), inst)
+	err := repo.Create(context.Background(), inst)
 	if err != ErrInvalidState {
 		t.Fatalf("Create: want ErrInvalidState, got %v", err)
-	}
-	if got != (Instance{}) {
-		t.Errorf("Create: want zero value, got %+v", got)
 	}
 }
 
@@ -80,7 +71,7 @@ func TestInMemoryRepository_Get(t *testing.T) {
 	repo := NewInMemoryRepository()
 
 	inst := Instance{ID: "get-test-id", State: StateActive}
-	if _, err := repo.Create(context.Background(), inst); err != nil {
+	if err := repo.Create(context.Background(), inst); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
@@ -126,10 +117,10 @@ func TestInMemoryRepository_List(t *testing.T) {
 	}
 	inst1 := Instance{ID: "a", State: StateActive}
 	inst2 := Instance{ID: "b", State: StateActive}
-	if _, err := repo.Create(context.Background(), inst1); err != nil {
+	if err := repo.Create(context.Background(), inst1); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if _, err := repo.Create(context.Background(), inst2); err != nil {
+	if err := repo.Create(context.Background(), inst2); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
@@ -137,7 +128,7 @@ func TestInMemoryRepository_List(t *testing.T) {
 	if err != nil {
 		t.Fatalf("List: unexpected error: %v", err)
 	}
-	
+
 	// Check count
 	if len(got) != 2 {
 		t.Fatalf("List: want 2, got %d", len(got))
@@ -161,10 +152,10 @@ func TestInMemoryRepository_List_ExcludesDeleted(t *testing.T) {
 
 	inst1 := Instance{ID: "a", State: StateActive}
 	inst2 := Instance{ID: "b", State: StateActive}
-	if _, err := repo.Create(context.Background(), inst1); err != nil {
+	if err := repo.Create(context.Background(), inst1); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if _, err := repo.Create(context.Background(), inst2); err != nil {
+	if err := repo.Create(context.Background(), inst2); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
@@ -203,10 +194,10 @@ func TestInMemoryRepository_Delete(t *testing.T) {
 
 	inst1 := Instance{ID: "a", State: StateActive}
 	inst2 := Instance{ID: "b", State: StateActive}
-	if _, err := repo.Create(context.Background(), inst1); err != nil {
+	if err := repo.Create(context.Background(), inst1); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if _, err := repo.Create(context.Background(), inst2); err != nil {
+	if err := repo.Create(context.Background(), inst2); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
@@ -241,7 +232,7 @@ func TestInMemoryRepository_Delete_Idempotent(t *testing.T) {
 	repo := NewInMemoryRepository()
 
 	inst := Instance{ID: "a", State: StateActive}
-	if _, err := repo.Create(context.Background(), inst); err != nil {
+	if err := repo.Create(context.Background(), inst); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 

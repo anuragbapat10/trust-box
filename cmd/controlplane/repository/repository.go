@@ -8,7 +8,7 @@ import (
 )
 
 type InstanceRepository interface {
-	Create(ctx context.Context, inst Instance) (Instance, error)
+	Create(ctx context.Context, inst Instance) error
 	Get(ctx context.Context, id string) (Instance, error)
 	List(ctx context.Context) ([]Instance, error)
 	Delete(ctx context.Context, id string) error
