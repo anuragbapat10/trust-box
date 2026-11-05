@@ -12,7 +12,7 @@ import (
 // (serving /metrics and /healthz), and a cleanup function that shuts
 // down tracing and metrics. The caller is responsible for defining any
 // service-specific meters on top.
-func Setup(ctx context.Context, defaultServiceName string) (*slog.Logger, *http.ServeMux, func(context.Context) error, error) {
+func Setup(ctx context.Context, defaultServiceName string) (*slog.Logger, Config, *http.ServeMux, func(context.Context) error, error) {
 	cfg := LoadFromEnv()
 	if os.Getenv("SERVICE_NAME") == "" {
 		cfg.ServiceName = defaultServiceName
@@ -20,18 +20,18 @@ func Setup(ctx context.Context, defaultServiceName string) (*slog.Logger, *http.
 
 	logger, err := NewLogger(cfg.ServiceName, cfg.Level, cfg.Format)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, cfg, nil, nil, err
 	}
 
 	traceShutdown, err := SetupTracing(ctx, cfg.TracesExporter)
 	if err != nil {
-		return logger, nil, nil, err
+		return logger, cfg, nil, nil, err
 	}
 
 	meterShutdown, err := SetupMetrics()
 	if err != nil {
 		_ = traceShutdown(context.Background())
-		return logger, nil, nil, err
+		return logger, cfg, nil, nil, err
 	}
 
 	cleanup := func(c context.Context) error {
@@ -46,5 +46,5 @@ func Setup(ctx context.Context, defaultServiceName string) (*slog.Logger, *http.
 	}
 
 	mux := Mux()
-	return logger, mux, cleanup, nil
+	return logger, cfg, mux, cleanup, nil
 }

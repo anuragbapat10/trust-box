@@ -16,9 +16,13 @@ import (
 	pb "github.com/anuragbapat10/trust-box.git/internal/gen/trustbox/v1"
 	"github.com/anuragbapat10/trust-box.git/internal/observability"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 // TODO: port number and repository capacity from config
+
+const serviceName = "controlplane"
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -28,7 +32,7 @@ func main() {
 }
 
 func run(ctx context.Context) int {
-	logger, mux, cleanup, err := observability.Setup(ctx, "controlplane")
+	logger, cfg, mux, cleanup, err := observability.Setup(ctx, serviceName)
 	if err != nil {
 		slog.Error("observability setup failed", slog.String("error", err.Error()))
 		return 1
@@ -38,8 +42,6 @@ func run(ctx context.Context) int {
 			logger.Error("observability shutdown failed", slog.String("error", err.Error()))
 		}
 	}()
-
-	cfg := observability.LoadFromEnv()
 
 	// gRPC server setup
 	grpcAddr := os.Getenv("GRPC_ADDR")
@@ -55,7 +57,20 @@ func run(ctx context.Context) int {
 
 	grpcServer := grpc.NewServer()
 	repo := repository.NewInMemoryRepository()
-	pb.RegisterControlPlaneServer(grpcServer, &ControlPlaneServer{Repo: repo})
+
+	daemonAddr := os.Getenv("DAEMON_ADDR")
+	if daemonAddr == "" {
+		daemonAddr = "localhost:50052"
+	}
+	conn, err := grpc.NewClient(daemonAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		logger.Error("failed to dial daemon", slog.String("addr", daemonAddr), slog.String("error", err.Error()))
+		return 1
+	}
+	daemonClient := pb.NewNodeDaemonClient(conn)
+
+	pb.RegisterControlPlaneServer(grpcServer, &ControlPlaneServer{Repo: repo, DaemonClient: daemonClient})
+	reflection.Register(grpcServer)
 
 	// Run gRPC server in background
 	grpcErrCh := make(chan error, 1)

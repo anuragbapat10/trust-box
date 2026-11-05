@@ -6,23 +6,35 @@ import (
 
 	"github.com/anuragbapat10/trust-box.git/cmd/controlplane/repository"
 	pb "github.com/anuragbapat10/trust-box.git/internal/gen/trustbox/v1"
+	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type ControlPlaneServer struct {
 	pb.UnimplementedControlPlaneServer
-	Repo repository.InstanceRepository
+	Repo         repository.InstanceRepository
+	DaemonClient pb.NodeDaemonClient
 }
 
 func (s *ControlPlaneServer) CreateInstance(ctx context.Context, req *pb.CreateInstanceRequest) (*pb.Instance, error) {
-	// TODO: This will be replaced later by daemon call
-	now := time.Now()
-	inst := repository.Instance{
-		ID:         "inst-mock-1",
-		State:      repository.StateActive,
-		CreateTime: now,
+	id := uuid.NewString()
+
+	var createTime time.Time
+	if s.DaemonClient != nil {
+		resp, err := s.DaemonClient.StartInstance(ctx, &pb.StartInstanceRequest{Id: id})
+		if err != nil {
+			return nil, err
+		}
+		createTime = resp.GetCreateTime().AsTime()
+	} else {
+		createTime = time.Now()
 	}
-	// Until here
+
+	inst := repository.Instance{
+		ID:         id,
+		State:      repository.StateActive,
+		CreateTime: createTime,
+	}
 
 	if err := s.Repo.Create(ctx, inst); err != nil {
 		return nil, err
@@ -31,7 +43,7 @@ func (s *ControlPlaneServer) CreateInstance(ctx context.Context, req *pb.CreateI
 	return &pb.Instance{
 		Id:         inst.ID,
 		State:      pb.State_ACTIVE,
-		CreateTime: timestamppb.New(inst.CreateTime), // TODO: This will be replaced by daemon generated timestamp
+		CreateTime: timestamppb.New(inst.CreateTime),
 	}, nil
 }
 
