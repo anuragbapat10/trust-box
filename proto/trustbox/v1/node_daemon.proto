@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package trustbox.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/anuragbapat10/trust-box.git/internal/gen/trustbox/v1;trustboxv1";
+
+service NodeDaemon {
+  rpc StartInstance(StartInstanceRequest) returns (NodeInstance);
+  rpc StopInstance(StopInstanceRequest) returns (StopInstanceResponse);
+}
+
+enum NodeState {
+  NODE_STATE_UNSPECIFIED = 0;
+  RUNNING = 1;
+  PAUSED = 2;
+  STOPPED = 3;
+}
+
+message NodeInstance {
+  string id = 1;
+  NodeState state = 2;
+  google.protobuf.Timestamp create_time = 3;
+}
+
+message StartInstanceRequest {
+  string id = 1;
+}
+
+message StopInstanceRequest {
+  string id = 1;
+}
+
+message StopInstanceResponse {}

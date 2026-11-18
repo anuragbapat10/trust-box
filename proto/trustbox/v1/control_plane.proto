@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package trustbox.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/anuragbapat10/trust-box.git/internal/gen/trustbox/v1;trustboxv1";
+
+service ControlPlane {
+  // FailedPrecondition when the v1 single-instance budget is occupied.
+  rpc CreateInstance(CreateInstanceRequest) returns (Instance);
+  // Excludes DELETED tombstones. Ordered by create_time ascending.
+  rpc ListInstances(ListInstancesRequest) returns (ListInstancesResponse);
+  rpc GetInstance(GetInstanceRequest) returns (Instance);
+  // Tombstones the record (state=DELETED + delete_time); swept after a
+  // 24h TTL. Deleting a tombstoned id is idempotent success.
+  rpc DeleteInstance(DeleteInstanceRequest) returns (DeleteInstanceResponse);
+}
+
+enum State {
+  STATE_UNSPECIFIED = 0;
+  ACTIVE = 1;
+  // Provisioned but saved and inactive. Placeholder for deferred :save/:resume.
+  INACTIVE = 2;
+  DELETED = 3;
+}
+
+message Instance {
+  string id = 1;
+  State state = 2;
+  google.protobuf.Timestamp create_time = 3;
+  google.protobuf.Timestamp delete_time = 4;
+}
+
+message CreateInstanceRequest {}
+
+message ListInstancesRequest {}
+
+message ListInstancesResponse {
+  repeated Instance instances = 1;
+}
+
+message GetInstanceRequest {
+  string id = 1;
+}
+
+message DeleteInstanceRequest {
+  string id = 1;
+}
+
+message DeleteInstanceResponse {}
