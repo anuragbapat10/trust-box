@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 
 	pb "github.com/anuragbapat10/trust-box.git/internal/gen/trustbox/v1"
@@ -25,5 +26,11 @@ func (s *NodeDaemonServer) StartInstance(ctx context.Context, req *pb.StartInsta
 }
 
 func (s *NodeDaemonServer) StopInstance(ctx context.Context, req *pb.StopInstanceRequest) (*pb.StopInstanceResponse, error) {
-	return nil, nil
+	if req.GetId() == "" {
+		return nil, fmt.Errorf("instance id cannot be empty")
+	}
+	if err := s.instanceServer.teardown(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
+	return &pb.StopInstanceResponse{}, nil
 }

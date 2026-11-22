@@ -11,19 +11,30 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
+	"syscall"
 	"time"
 
 	pb "github.com/anuragbapat10/trust-box.git/internal/gen/trustbox/v1"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+type runningInstance struct {
+	cmd        *exec.Cmd
+	logFile    *os.File
+	socketPath string
+}
+
 type InstanceServer struct {
 	logger *slog.Logger
+	mu     sync.Mutex
+	procs  map[string]runningInstance
 }
 
 func NewInstanceServer(logger *slog.Logger) *InstanceServer {
 	return &InstanceServer{
 		logger: logger,
+		procs:  make(map[string]runningInstance),
 	}
 }
 
@@ -35,8 +46,10 @@ func (s *InstanceServer) startup(ctx context.Context, id string) (*pb.NodeInstan
 	socketPath := fmt.Sprintf("/tmp/firecracker-%s.socket", id)
 	_ = os.Remove(socketPath)
 
+	bootStart := time.Now()
+
 	// 1. Spawn Firecracker Process
-	cmd := exec.CommandContext(ctx, "/usr/local/bin/firecracker", "--api-sock", socketPath)
+	cmd := exec.Command("/usr/local/bin/firecracker", "--api-sock", socketPath)
 	cmd.Stdin = os.Stdin
 
 	logPath := fmt.Sprintf("/tmp/trust-box/firecracker-%s.log", id)
@@ -47,6 +60,14 @@ func (s *InstanceServer) startup(ctx context.Context, id string) (*pb.NodeInstan
 	}
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
+
+	fail := func(err error) (*pb.NodeInstance, error) {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		_ = logFile.Close()
+		_ = os.Remove(socketPath)
+		return nil, err
+	}
 
 	if err := cmd.Start(); err != nil {
 		_ = logFile.Close()
@@ -63,8 +84,7 @@ func (s *InstanceServer) startup(ctx context.Context, id string) (*pb.NodeInstan
 		time.Sleep(100 * time.Millisecond)
 	}
 	if !socketReady {
-		_ = cmd.Process.Kill()
-		return nil, fmt.Errorf("firecracker socket %s did not appear in time", socketPath)
+		return fail(fmt.Errorf("firecracker socket %s did not appear in time", socketPath))
 	}
 
 	// Configure HTTP client to talk over Unix socket
@@ -84,8 +104,7 @@ func (s *InstanceServer) startup(ctx context.Context, id string) (*pb.NodeInstan
 		"vcpu_count":   1,
 		"mem_size_mib": 256,
 	}); err != nil {
-		_ = cmd.Process.Kill()
-		return nil, fmt.Errorf("failed to configure machine: %w", err)
+		return fail(fmt.Errorf("failed to configure machine: %w", err))
 	}
 
 	// 3. Configure Boot Source (kernel)
@@ -95,8 +114,7 @@ func (s *InstanceServer) startup(ctx context.Context, id string) (*pb.NodeInstan
 		"kernel_image_path": filepath.Join(imgwd, "vmlinux"),
 		"boot_args":         "console=ttyS0 reboot=k panic=1 pci=off",
 	}); err != nil {
-		_ = cmd.Process.Kill()
-		return nil, fmt.Errorf("failed to configure boot source: %w", err)
+		return fail(fmt.Errorf("failed to configure boot source: %w", err))
 	}
 
 	// 4. Configure Root Filesystem Drive
@@ -107,8 +125,7 @@ func (s *InstanceServer) startup(ctx context.Context, id string) (*pb.NodeInstan
 		"is_root_device": true,
 		"is_read_only": false,
 	}); err != nil {
-		_ = cmd.Process.Kill()
-		return nil, fmt.Errorf("failed to configure rootfs: %w", err)
+		return fail(fmt.Errorf("failed to configure rootfs: %w", err))
 	}
 
 	// 5. Start Instance
@@ -116,11 +133,18 @@ func (s *InstanceServer) startup(ctx context.Context, id string) (*pb.NodeInstan
 	if err := putJSON(httpClient, base+"/actions", map[string]string{
 		"action_type": "InstanceStart",
 	}); err != nil {
-		_ = cmd.Process.Kill()
-		return nil, fmt.Errorf("failed to start instance: %w", err)
+		return fail(fmt.Errorf("failed to start instance: %w", err))
 	}
 
-	s.logger.InfoContext(ctx, "microVM successfully booted", slog.String("id", id))
+	s.mu.Lock()
+	s.procs[id] = runningInstance{
+		cmd:        cmd,
+		logFile:    logFile,
+		socketPath: socketPath,
+	}
+	s.mu.Unlock()
+
+	s.logger.InfoContext(ctx, "microVM successfully booted", slog.String("id", id), slog.Duration("cold_boot", time.Since(bootStart)))
 
 	return &pb.NodeInstance{
 		Id:         id,
@@ -129,7 +153,53 @@ func (s *InstanceServer) startup(ctx context.Context, id string) (*pb.NodeInstan
 	}, nil
 }
 
-func (s *InstanceServer) teardown() error {
+func (s *InstanceServer) teardown(ctx context.Context, id string) error {
+	if id == "" {
+		return fmt.Errorf("instance id cannot be empty")
+	}
+
+	socketPath := fmt.Sprintf("/tmp/firecracker-%s.socket", id)
+
+	s.mu.Lock()
+	ri, ok := s.procs[id]
+	delete(s.procs, id)
+	s.mu.Unlock()
+
+	if !ok {
+		_ = os.Remove(socketPath)
+		s.logger.InfoContext(ctx, "instance not running; removed stale socket", slog.String("id", id))
+		return nil
+	}
+
+	if ri.cmd != nil && ri.cmd.Process != nil {
+		_ = ri.cmd.Process.Signal(syscall.SIGTERM)
+
+		done := make(chan error, 1)
+		go func() {
+			done <- ri.cmd.Wait()
+		}()
+
+		select {
+		case err := <-done:
+			if err != nil {
+				s.logger.WarnContext(ctx, "firecracker exited with error", slog.String("id", id), slog.String("error", err.Error()))
+			}
+		case <-time.After(5 * time.Second):
+			s.logger.WarnContext(ctx, "firecracker did not exit after SIGTERM; killing", slog.String("id", id))
+			_ = ri.cmd.Process.Kill()
+			<-done
+		}
+	}
+
+	if ri.logFile != nil {
+		_ = ri.logFile.Close()
+	}
+
+	if err := os.Remove(ri.socketPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to remove socket %s: %w", ri.socketPath, err)
+	}
+
+	s.logger.InfoContext(ctx, "microVM torn down", slog.String("id", id))
 	return nil
 }
 

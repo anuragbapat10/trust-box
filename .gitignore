@@ -36,3 +36,4 @@ go.work.sum
 
 # Developer-local agent instructions (never pushed)
 /PERSONAL.md
+/startup.sh

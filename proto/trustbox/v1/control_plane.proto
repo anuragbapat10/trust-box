@@ -9,7 +9,7 @@ option go_package = "github.com/anuragbapat10/trust-box.git/internal/gen/trustbo
 service ControlPlane {
   // FailedPrecondition when the v1 single-instance budget is occupied.
   rpc CreateInstance(CreateInstanceRequest) returns (Instance);
-  // Excludes DELETED tombstones. Ordered by create_time ascending.
+  // Excludes DELETED tombstones.
   rpc ListInstances(ListInstancesRequest) returns (ListInstancesResponse);
   rpc GetInstance(GetInstanceRequest) returns (Instance);
   // Tombstones the record (state=DELETED + delete_time); swept after a
