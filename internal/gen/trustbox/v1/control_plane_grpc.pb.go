@@ -31,7 +31,7 @@ const (
 type ControlPlaneClient interface {
 	// FailedPrecondition when the v1 single-instance budget is occupied.
 	CreateInstance(ctx context.Context, in *CreateInstanceRequest, opts ...grpc.CallOption) (*Instance, error)
-	// Excludes DELETED tombstones. Ordered by create_time ascending.
+	// Excludes DELETED tombstones.
 	ListInstances(ctx context.Context, in *ListInstancesRequest, opts ...grpc.CallOption) (*ListInstancesResponse, error)
 	GetInstance(ctx context.Context, in *GetInstanceRequest, opts ...grpc.CallOption) (*Instance, error)
 	// Tombstones the record (state=DELETED + delete_time); swept after a
@@ -93,7 +93,7 @@ func (c *controlPlaneClient) DeleteInstance(ctx context.Context, in *DeleteInsta
 type ControlPlaneServer interface {
 	// FailedPrecondition when the v1 single-instance budget is occupied.
 	CreateInstance(context.Context, *CreateInstanceRequest) (*Instance, error)
-	// Excludes DELETED tombstones. Ordered by create_time ascending.
+	// Excludes DELETED tombstones.
 	ListInstances(context.Context, *ListInstancesRequest) (*ListInstancesResponse, error)
 	GetInstance(context.Context, *GetInstanceRequest) (*Instance, error)
 	// Tombstones the record (state=DELETED + delete_time); swept after a

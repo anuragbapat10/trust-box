@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
 	"github.com/anuragbapat10/trust-box.git/cmd/controlplane/repository"
@@ -17,6 +18,7 @@ type ControlPlaneServer struct {
 }
 
 func (s *ControlPlaneServer) CreateInstance(ctx context.Context, req *pb.CreateInstanceRequest) (*pb.Instance, error) {
+	// TODO: Make UUID client generated later
 	id := uuid.NewString()
 
 	var createTime time.Time
@@ -109,7 +111,23 @@ func (s *ControlPlaneServer) GetInstance(ctx context.Context, req *pb.GetInstanc
 }
 
 func (s *ControlPlaneServer) DeleteInstance(ctx context.Context, req *pb.DeleteInstanceRequest) (*pb.DeleteInstanceResponse, error) {
-	if err := s.Repo.Delete(ctx, req.GetId()); err != nil {
+	id := req.GetId()
+
+	inst, err := s.Repo.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if inst.State == repository.StateDeleted {
+		return &pb.DeleteInstanceResponse{}, nil
+	}
+
+	if s.DaemonClient != nil {
+		if _, err := s.DaemonClient.StopInstance(ctx, &pb.StopInstanceRequest{Id: id}); err != nil {
+			slog.WarnContext(ctx, "daemon StopInstance failed; tombstoning anyway", slog.String("id", id), slog.String("error", err.Error()))
+		}
+	}
+
+	if err := s.Repo.Delete(ctx, id); err != nil {
 		return nil, err
 	}
 	return &pb.DeleteInstanceResponse{}, nil

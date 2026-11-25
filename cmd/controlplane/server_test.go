@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net"
 	"testing"
+	"time"
 
 	"github.com/anuragbapat10/trust-box.git/cmd/controlplane/repository"
 	pb "github.com/anuragbapat10/trust-box.git/internal/gen/trustbox/v1"
@@ -253,3 +255,35 @@ func TestControlPlaneServer_DeleteInstance_Idempotent(t *testing.T) {
 }
 
 
+
+type errStopDaemonClient struct {
+	pb.NodeDaemonClient
+}
+
+func (errStopDaemonClient) StopInstance(ctx context.Context, in *pb.StopInstanceRequest, opts ...grpc.CallOption) (*pb.StopInstanceResponse, error) {
+	return nil, errors.New("daemon unavailable")
+}
+
+func TestControlPlaneServer_DeleteInstance_TombstoneOnDaemonFailure(t *testing.T) {
+	repo := repository.NewInMemoryRepository()
+	server := &ControlPlaneServer{Repo: repo, DaemonClient: errStopDaemonClient{}}
+
+	id := "daemon-failure-id"
+	inst := repository.Instance{ID: id, State: repository.StateActive, CreateTime: time.Now()}
+	if err := repo.Create(context.Background(), inst); err != nil {
+		t.Fatalf("seed repo: %v", err)
+	}
+
+	_, err := server.DeleteInstance(context.Background(), &pb.DeleteInstanceRequest{Id: id})
+	if err != nil {
+		t.Fatalf("DeleteInstance returned error: %v", err)
+	}
+
+	got, err := repo.Get(context.Background(), id)
+	if err != nil {
+		t.Fatalf("repo.Get: %v", err)
+	}
+	if got.State != repository.StateDeleted {
+		t.Errorf("expected state DELETED, got %v", got.State)
+	}
+}
